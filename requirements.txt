@@ -7,4 +7,6 @@ python-jose[cryptography]
 passlib
 python-multipart
 bcrypt==4.3.0
+dotenv
 psycopg2-binary
+cloudinary

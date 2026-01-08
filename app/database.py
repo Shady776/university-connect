@@ -1,9 +1,13 @@
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 from .models import Base
+import os
+from dotenv import load_dotenv
 
-SQLALCHEMY_DATABASE_URL = "sqlite:///./lms.db"
-# For PostgreSQL: "postgresql://user:password@localhost/dbname"
+load_dotenv()
+
+SQLALCHEMY_DATABASE_URL = os.getenv("DB_URL")
+# SQLALCHEMY_DATABASE_URL =  "sqlite:///./lms.db"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, 
