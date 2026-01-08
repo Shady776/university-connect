@@ -7,10 +7,15 @@ from sqlalchemy.orm import Session
 from .database import get_db
 from .models import User
 from .schemas import TokenData
+import os
+from dotenv import load_dotenv
 
-SECRET_KEY = "yaewfygagbdygwgfygcubugugyauhrucqgy2gugbuoaqwgfuqufguawgrbuargbyaurugbdqow7gpwgurgauwyfoyrgwudgoyrguybgfygqwiugfuoqwyuyfguawgo7fqc7iganiwxbyagugc"
-ALGORITHM = "HS256"
-ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24  # 24 hours
+load_dotenv()
+
+SECRET_KEY = os.getenv("SECRET_KEY")
+ALGORITHM = os.getenv("ALGORITHM")
+ACCESS_TOKEN_EXPIRE_MINUTES = int(os.getenv("ACCESS_TOKEN_EXPIRE_MINUTES"))
+
 
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="auth/login")
 
