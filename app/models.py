@@ -7,6 +7,7 @@ import enum
 Base = declarative_base()
 
 class UserRole(str, enum.Enum):
+    ADMIN = "admin"
     TEACHER = "teacher"
     STUDENT = "student"
 

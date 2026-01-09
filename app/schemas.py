@@ -30,6 +30,63 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     user_id: Optional[int] = None
 
+# Admin Statistics Schemas
+class UserStats(BaseModel):
+    total: int
+    teachers: int
+    students: int
+
+class CourseStats(BaseModel):
+    total: int
+    active: int
+
+class AssignmentStats(BaseModel):
+    total: int
+
+class SubmissionStats(BaseModel):
+    total: int
+    graded: int
+    pending: int
+
+class EnrollmentStats(BaseModel):
+    total: int
+
+class SystemOverview(BaseModel):
+    users: UserStats
+    courses: CourseStats
+    assignments: AssignmentStats
+    submissions: SubmissionStats
+    enrollments: EnrollmentStats
+
+class RecentActivity(BaseModel):
+    period_days: int
+    new_users: int
+    new_courses: int
+    new_assignments: int
+    new_submissions: int
+    new_enrollments: int
+
+class TopCourse(BaseModel):
+    course_id: int
+    course_title: str
+    teacher_id: int
+    enrollment_count: int
+
+class TeacherPerformance(BaseModel):
+    teacher_id: int
+    teacher_name: Optional[str]
+    teacher_username: str
+    courses_count: int
+    assignments_count: int
+    pending_grading: int
+
+class StudentPerformance(BaseModel):
+    student_id: int
+    student_name: Optional[str]
+    student_username: str
+    average_score: float
+    total_submissions: int
+
 # Course Schemas
 class CourseBase(BaseModel):
     title: str

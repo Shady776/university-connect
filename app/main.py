@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import init_db
-from .routes import auth, courses, assignments, submissions, enrollments
+from .routes import auth, courses, assignments, submissions, enrollments, admin
 
 app = FastAPI(
     title="Learning Management System API",
@@ -29,6 +29,7 @@ app.include_router(courses.router)
 app.include_router(assignments.router)
 app.include_router(enrollments.router)
 app.include_router(submissions.router)
+app.include_router(admin.router)
 
 @app.get("/")
 def root():
