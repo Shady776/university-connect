@@ -185,8 +185,8 @@ async def grade_submission_with_ai(
         )
         
         # Update submission with AI grading results
-        submission.score = grading_result["score"]
-        submission.feedback = grading_result["feedback"]
+        submission.score = grading_result.score
+        submission.feedback = grading_result.feedback
         submission.status = SubmissionStatus.GRADED
         submission.graded_at = datetime.utcnow()
         
