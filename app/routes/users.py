@@ -4,7 +4,7 @@ from typing import List
 from uuid import UUID
 from ..database import get_db
 from ..models import User
-from ..schemas import AdminUpdateUsers, UserResponse, UserCreate, UserUpdateProfile, ChangePasswordRequest
+from ..schemas import AdminUpdateUsers, UserResponse, UserBase, UserUpdateProfile, ChangePasswordRequest
 from ..oauth2 import get_current_user
 from ..utils.password_hash import hash_password, verify_password
 

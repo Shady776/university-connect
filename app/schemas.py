@@ -10,28 +10,11 @@ class UserBase(BaseModel):
     email: EmailStr
     username: str
     full_name: Optional[str] = None
+    password: str
     role: UserRole
     matric_number: Optional[str] = None
     department: Optional[Department] = None
 
-class UserCreate(UserBase):
-    password: str
-    
-    @field_validator('matric_number')
-    @classmethod
-    def validate_matric_for_student(cls, v, info):
-        """Matric number is required for students"""
-        if info.data.get('role') == UserRole.STUDENT and not v:
-            raise ValueError('Matric number is required for students')
-        return v
-    
-    @field_validator('department')
-    @classmethod
-    def validate_department_for_student(cls, v, info):
-        """Department is required for students"""
-        if info.data.get('role') == UserRole.STUDENT and not v:
-            raise ValueError('Department is required for students')
-        return v
 
 
 class UserUpdateProfile(BaseModel):
@@ -58,8 +41,14 @@ class ChangePasswordRequest(BaseModel):
     current_password: str
     new_password: str
 
-class UserResponse(UserBase):
+class UserResponse(BaseModel):
     id: UUID
+    email: EmailStr
+    username: str
+    full_name: Optional[str] = None
+    role: UserRole
+    matric_number: Optional[str] = None
+    department: Optional[Department] = None
     created_at: datetime
     
     model_config = ConfigDict(from_attributes=True)

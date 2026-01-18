@@ -111,8 +111,8 @@ async def batch_grade_with_ai(
                 )
                 
                 # Update submission
-                submission.score = grading_result["score"]
-                submission.feedback = grading_result["feedback"]
+                submission.score = grading_result.score
+                submission.feedback = grading_result.feedback
                 submission.status = SubmissionStatus.GRADED
                 submission.graded_at = datetime.utcnow()
                 graded_count += 1

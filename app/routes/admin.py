@@ -7,7 +7,7 @@ from uuid import UUID
 from ..database import get_db
 from ..models import User, Course, Assignment, Submission, Enrollment, UserRole, SubmissionStatus
 from ..schemas import (
-    UserCreate, UserResponse, CourseResponse, AssignmentResponse, 
+    UserBase, UserResponse, CourseResponse, AssignmentResponse, 
     SubmissionDetailResponse, EnrollmentResponse, SystemOverview,
     RecentActivity, TopCourse, TeacherPerformance, StudentPerformance,
     UserStats, CourseStats, AssignmentStats, SubmissionStats, EnrollmentStats, AdminUpdateProfile
@@ -26,7 +26,7 @@ def hash_password(password: str) -> str:
 
 @router.post("/users/teacher", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_teacher(
-    teacher_data: UserCreate,
+    teacher_data: UserBase,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
@@ -60,7 +60,7 @@ def create_teacher(
 
 @router.post("/users/student", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def create_student(
-    student_data: UserCreate,
+    student_data: UserBase,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):

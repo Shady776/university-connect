@@ -1,8 +1,9 @@
+from app.schemas import UserBase
 from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from ..database import get_db
 from ..models import User
-from ..schemas import UserCreate, UserResponse, UserLogin, Token
+from ..schemas import UserBase, UserResponse, UserLogin, Token
 from ..oauth2 import create_access_token
 from ..utils.password_hash import hash_password, verify_password
 from fastapi.security import OAuth2PasswordRequestForm
@@ -13,9 +14,8 @@ router = APIRouter(prefix="/auth", tags=["Authentication"])
 def authenticate_user(db: Session, username: str, password: str):
     """Authenticate a user by username and password"""
     # Convert username to lowercase for case-insensitive lookup
-    username_lower = username.lower().strip()
-    user = db.query(User).filter(User.username == username_lower).first()
-    
+    user = db.query(User).filter(User.username == username).first()
+
     if not user:
         return False
     
@@ -26,7 +26,7 @@ def authenticate_user(db: Session, username: str, password: str):
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register(user_data: UserCreate, db: Session = Depends(get_db)):
+def register(user_data: UserBase, db: Session = Depends(get_db)):
     # Convert username to lowercase and strip whitespace
     username_lower = user_data.username.lower().strip()
     

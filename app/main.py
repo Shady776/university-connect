@@ -3,11 +3,24 @@ from fastapi.middleware.cors import CORSMiddleware
 from .database import init_db
 from .routes import (auth, courses, assignments, users, submissions, enrollments, 
                      admin, dashboard, announcements, teacher_dashboard, course_materials, test)
+from contextlib import asynccontextmanager
+from app.utils.admin import setup_admin
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    try:
+        init_db()
+        setup_admin()
+        yield
+    finally:
+        print("shutting down")
+
 
 app = FastAPI(
     title="Learning Management System API",
     description="A comprehensive LMS backend for teachers and students",
-    version="1.0.0"
+    version="1.0.0",
+    lifespan=lifespan
 )
 
 # CORS middleware
@@ -20,9 +33,7 @@ app.add_middleware(
 )
 
 # Initialize database
-@app.on_event("startup")
-def on_startup():
-    init_db()
+
 
 # Include routers
 app.include_router(auth.router)
