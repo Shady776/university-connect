@@ -11,17 +11,14 @@ from ..database import get_db
 from ..models import CourseMaterial, Course, User
 from ..schemas import CourseMaterialResponse, CourseMaterialDetailResponse
 from ..oauth2 import get_current_user, get_current_teacher
-from dotenv import load_dotenv
-import os
+from app.config import CONFIG
 
 router = APIRouter(prefix="/course-materials", tags=["Course Materials"])
 
-load_dotenv()
-
 cloudinary.config(
-    cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
-    api_key=os.getenv("CLOUDINARY_API_KEY"),
-    api_secret=os.getenv("CLOUDINARY_API_SECRET")
+    cloud_name=CONFIG.CLOUDINARY_CLOUD_NAME,
+    api_key=CONFIG.CLOUDINARY_API_KEY,
+    api_secret=CONFIG.CLOUDINARY_API_SECRET
 )
 
 @router.post("/", response_model=CourseMaterialResponse, status_code=status.HTTP_201_CREATED)
