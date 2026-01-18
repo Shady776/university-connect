@@ -31,7 +31,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None) -
 def verify_access_token(token: str, credentials_exception) -> TokenData:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
-        user_id: int = payload.get("sub")
+        user_id: str = payload.get("sub")
+        role: str = payload.get("role")  # Extract role from token
         if user_id is None:
             raise credentials_exception
         token_data = TokenData(user_id=user_id)

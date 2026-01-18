@@ -10,25 +10,58 @@ from fastapi.security import OAuth2PasswordRequestForm
 router = APIRouter(prefix="/auth", tags=["Authentication"])
 
 
+def authenticate_user(db: Session, username: str, password: str):
+    """Authenticate a user by username and password"""
+    # Convert username to lowercase for case-insensitive lookup
+    username_lower = username.lower().strip()
+    user = db.query(User).filter(User.username == username_lower).first()
+    
+    if not user:
+        return False
+    
+    if not verify_password(password, user.hashed_password):
+        return False
+    
+    return user
+
+
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
 def register(user_data: UserCreate, db: Session = Depends(get_db)):
-    # Check if user exists
+    # Convert username to lowercase and strip whitespace
+    username_lower = user_data.username.lower().strip()
+    
+    # Validate username is not empty after stripping
+    if not username_lower:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username cannot be empty"
+        )
+    
+    # Check if user exists (check with lowercase username)
     existing_user = db.query(User).filter(
-        (User.email == user_data.email) | (User.username == user_data.username)
+        (User.email == user_data.email) | (User.username == username_lower)
     ).first()
     
     if existing_user:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="User with this email or username already exists"
-        )
+        if existing_user.username == username_lower:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already taken"
+            )
+        else:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already registered"
+            )
     
-    # Create new user
+    # Create new user with lowercase username
     hashed_pwd = hash_password(user_data.password)
     new_user = User(
         email=user_data.email,
-        username=user_data.username,
+        username=username_lower,  # Store username in lowercase
         full_name=user_data.full_name,
+        matric_number=user_data.matric_number,
+        department=user_data.department,
         role=user_data.role,
         hashed_password=hashed_pwd
     )
@@ -39,22 +72,50 @@ def register(user_data: UserCreate, db: Session = Depends(get_db)):
     
     return new_user
 
+
 @router.post("/login", response_model=Token)
 def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):
-    user = db.query(User).filter(User.username == form_data.username).first()
-
-    if not user or not verify_password(form_data.password, user.hashed_password):
+    # Authenticate user (username will be converted to lowercase in authenticate_user)
+    user = authenticate_user(db, form_data.username, form_data.password)
+    
+    if not user:
         raise HTTPException(
             status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Invalid credentials",
+            detail="Incorrect username or password",
+            headers={"WWW-Authenticate": "Bearer"},
         )
+    
+    # Include role in the token payload
+    access_token = create_access_token(
+        data={
+            "sub": str(user.id),
+            "role": user.role  # Include role in token
+        }
+    )
+    
+    return {"access_token": access_token, "token_type": "bearer"}
 
-    access_token = create_access_token(data={"sub": str(user.id)})
 
+@router.get("/check-username/{username}")
+def check_username_availability(username: str, db: Session = Depends(get_db)):
+    """Check if a username is available"""
+    # Convert to lowercase and strip whitespace
+    username_lower = username.lower().strip()
+    
+    # Validate username is not empty
+    if not username_lower:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Username cannot be empty"
+        )
+    
+    # Check if username exists
+    existing_user = db.query(User).filter(User.username == username_lower).first()
+    
     return {
-        "access_token": access_token,
-        "token_type": "bearer"
+        "username": username_lower,
+        "available": existing_user is None
     }

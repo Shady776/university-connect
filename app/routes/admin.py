@@ -1,17 +1,18 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, desc
 from typing import List, Optional
 from datetime import datetime, timedelta
+from uuid import UUID
 from ..database import get_db
 from ..models import User, Course, Assignment, Submission, Enrollment, UserRole, SubmissionStatus
 from ..schemas import (
     UserCreate, UserResponse, CourseResponse, AssignmentResponse, 
     SubmissionDetailResponse, EnrollmentResponse, SystemOverview,
     RecentActivity, TopCourse, TeacherPerformance, StudentPerformance,
-    UserStats, CourseStats, AssignmentStats, SubmissionStats, EnrollmentStats
+    UserStats, CourseStats, AssignmentStats, SubmissionStats, EnrollmentStats, AdminUpdateProfile
 )
-from ..oauth2 import get_current_admin
+from ..oauth2 import get_current_admin, get_current_user
 from passlib.context import CryptContext
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
@@ -108,7 +109,7 @@ def get_all_users(
 
 @router.get("/users/{user_id}", response_model=UserResponse)
 def get_user(
-    user_id: int,
+    user_id: UUID,  # Changed from int to UUID
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
@@ -125,7 +126,7 @@ def get_user(
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
-    user_id: int,
+    user_id: UUID,  # Changed from int to UUID
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
@@ -154,7 +155,6 @@ def delete_user(
     db.commit()
     
     return None
-
 # ==================== COURSE MANAGEMENT ====================
 
 @router.get("/courses", response_model=List[CourseResponse])
@@ -170,7 +170,7 @@ def get_all_courses(
 
 @router.delete("/courses/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_course(
-    course_id: int,
+    course_id: UUID,  # Changed from int to UUID
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
@@ -187,7 +187,6 @@ def delete_course(
     db.commit()
     
     return None
-
 # ==================== ASSIGNMENT MANAGEMENT ====================
 
 @router.get("/assignments", response_model=List[AssignmentResponse])
@@ -201,9 +200,38 @@ def get_all_assignments(
     assignments = db.query(Assignment).offset(skip).limit(limit).all()
     return assignments
 
+@router.get("/assignments/{assignment_id}/submissions", response_model=List[SubmissionDetailResponse])
+def get_assignment_submissions(
+    assignment_id: UUID,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin),
+    skip: int = 0,
+    limit: int = 100
+):
+    """Get all submissions for a specific assignment (admin only)"""
+    # Verify assignment exists
+    assignment = db.query(Assignment).filter(Assignment.id == assignment_id).first()
+    
+    if not assignment:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Assignment not found"
+        )
+    
+    # Fetch submissions with student data eagerly loaded
+    submissions = db.query(Submission).options(
+        joinedload(Submission.student),
+        joinedload(Submission.assignment)
+    ).filter(Submission.assignment_id == assignment_id)\
+     .offset(skip)\
+     .limit(limit)\
+     .all()
+    
+    return submissions
+
 @router.delete("/assignments/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_assignment(
-    assignment_id: int,
+    assignment_id: UUID,  # Changed from int to UUID
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
@@ -220,7 +248,6 @@ def delete_assignment(
     db.commit()
     
     return None
-
 # ==================== SUBMISSION MANAGEMENT ====================
 
 @router.get("/submissions", response_model=List[SubmissionDetailResponse])
@@ -242,7 +269,7 @@ def get_all_submissions(
 
 @router.delete("/submissions/{submission_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_submission(
-    submission_id: int,
+    submission_id: UUID,  # Changed from int to UUID
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
@@ -259,7 +286,6 @@ def delete_submission(
     db.commit()
     
     return None
-
 # ==================== ENROLLMENT MANAGEMENT ====================
 
 @router.get("/enrollments", response_model=List[EnrollmentResponse])
@@ -275,7 +301,7 @@ def get_all_enrollments(
 
 @router.delete("/enrollments/{enrollment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_enrollment(
-    enrollment_id: int,
+    enrollment_id: UUID,  # Changed from int to UUID
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
@@ -335,30 +361,111 @@ def get_system_overview(
         )
     )
 
-@router.get("/statistics/recent-activity", response_model=RecentActivity)
+@router.get("/statistics/recent-activity")
 def get_recent_activity(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin),
-    days: int = 7
+    days: int = 7,
+    limit: int = 3
 ):
-    """Get activity statistics for the last N days"""
+    """Get detailed activity statistics for the last N days"""
     cutoff_date = datetime.utcnow() - timedelta(days=days)
     
+    # Get counts for summary
     new_users = db.query(User).filter(User.created_at >= cutoff_date).count()
     new_courses = db.query(Course).filter(Course.created_at >= cutoff_date).count()
     new_assignments = db.query(Assignment).filter(Assignment.created_at >= cutoff_date).count()
     new_submissions = db.query(Submission).filter(Submission.submitted_at >= cutoff_date).count()
     new_enrollments = db.query(Enrollment).filter(Enrollment.enrolled_at >= cutoff_date).count()
     
-    return RecentActivity(
-        period_days=days,
-        new_users=new_users,
-        new_courses=new_courses,
-        new_assignments=new_assignments,
-        new_submissions=new_submissions,
-        new_enrollments=new_enrollments
-    )
-
+    activities = []
+    
+    # Get recent users
+    recent_users = db.query(User).filter(User.created_at >= cutoff_date).order_by(desc(User.created_at)).limit(5).all()
+    for user in recent_users:
+        activities.append({
+            'id': user.id,
+            'type': 'user',
+            'action': 'joined the system',
+            'title': user.full_name or user.username,
+            'user_name': user.full_name,
+            'created_at': user.created_at
+        })
+    
+    # Get recent courses
+    recent_courses = db.query(Course).options(joinedload(Course.teacher)).filter(
+        Course.created_at >= cutoff_date
+    ).order_by(desc(Course.created_at)).limit(5).all()
+    for course in recent_courses:
+        activities.append({
+            'id': course.id,
+            'type': 'course',
+            'action': 'created a new course',
+            'title': course.title,
+            'user_name': course.teacher.full_name if course.teacher else 'Unknown',
+            'created_at': course.created_at
+        })
+    
+    # Get recent assignments
+    recent_assignments = db.query(Assignment).options(
+        joinedload(Assignment.course).joinedload(Course.teacher)
+    ).filter(Assignment.created_at >= cutoff_date).order_by(desc(Assignment.created_at)).limit(5).all()
+    for assignment in recent_assignments:
+        activities.append({
+            'id': assignment.id,
+            'type': 'assignment',
+            'action': 'posted an assignment',
+            'title': assignment.title,
+            'user_name': assignment.course.teacher.full_name if assignment.course and assignment.course.teacher else 'Unknown',
+            'created_at': assignment.created_at
+        })
+    
+    # Get recent submissions
+    recent_submissions = db.query(Submission).options(
+        joinedload(Submission.student),
+        joinedload(Submission.assignment)
+    ).filter(Submission.submitted_at >= cutoff_date).order_by(desc(Submission.submitted_at)).limit(5).all()
+    for submission in recent_submissions:
+        activities.append({
+            'id': submission.id,
+            'type': 'submission',
+            'action': 'submitted assignment',
+            'title': submission.assignment.title if submission.assignment else 'Unknown Assignment',
+            'user_name': submission.student.full_name if submission.student else 'Unknown',
+            'created_at': submission.submitted_at
+        })
+    
+    # Get recent enrollments
+    recent_enrollments = db.query(Enrollment).options(
+        joinedload(Enrollment.student),
+        joinedload(Enrollment.course)
+    ).filter(Enrollment.enrolled_at >= cutoff_date).order_by(desc(Enrollment.enrolled_at)).limit(5).all()
+    for enrollment in recent_enrollments:
+        activities.append({
+            'id': enrollment.id,
+            'type': 'enrollment',
+            'action': 'enrolled in',
+            'title': enrollment.course.title if enrollment.course else 'Unknown Course',
+            'user_name': enrollment.student.full_name if enrollment.student else 'Unknown',
+            'created_at': enrollment.enrolled_at
+        })
+    
+    # Sort all activities by date and limit
+    activities.sort(key=lambda x: x['created_at'], reverse=True)
+    activities = activities[:limit]
+    
+    return {
+        'period_days': days,
+        'activities': activities,
+        'summary': {
+            'period_days': days,
+            'new_users': new_users,
+            'new_courses': new_courses,
+            'new_assignments': new_assignments,
+            'new_submissions': new_submissions,
+            'new_enrollments': new_enrollments
+        }
+    }
 @router.get("/statistics/top-courses", response_model=List[TopCourse])
 def get_top_courses(
     db: Session = Depends(get_db),
@@ -451,3 +558,62 @@ def get_student_performance(
         ))
     
     return result
+
+@router.put("/me", response_model=UserResponse)
+def update_current_user_profile(
+    profile_data: AdminUpdateProfile,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_user)
+):
+    """
+    Update current user's profile information
+    """
+    # Check if email is being changed and if it's already taken
+    if profile_data.email and profile_data.email != current_user.email:
+        existing_user = db.query(User).filter(
+            User.email == profile_data.email,
+            User.id != current_user.id
+        ).first()
+        
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Email already in use by another user"
+            )
+        current_user.email = profile_data.email
+    
+    # Check if username is being changed and if it's already taken
+    if profile_data.username and profile_data.username.lower().strip() != current_user.username:
+        username_lower = profile_data.username.lower().strip()
+        
+        # Validate username is not empty
+        if not username_lower:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username cannot be empty"
+            )
+        
+        existing_user = db.query(User).filter(
+            User.username == username_lower,
+            User.id != current_user.id
+        ).first()
+        
+        if existing_user:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail="Username already taken"
+            )
+        current_user.username = username_lower
+    
+    # Update full_name if provided
+    if profile_data.full_name is not None:
+        current_user.full_name = profile_data.full_name
+    
+    # Update department if provided
+    if profile_data.department is not None:
+        current_user.department = profile_data.department
+    
+    db.commit()
+    db.refresh(current_user)
+    
+    return current_user

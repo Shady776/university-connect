@@ -1,10 +1,11 @@
 from fastapi import APIRouter, Depends, HTTPException, status
-from sqlalchemy.orm import Session
+from sqlalchemy.orm import Session, joinedload
 from typing import List
+from uuid import UUID
 from ..database import get_db
-from ..models import Enrollment, Course, User
+from ..models import Enrollment, Course, User, UserRole
 from ..schemas import EnrollmentCreate, EnrollmentResponse
-from ..oauth2 import get_current_user, get_current_student, get_current_teacher
+from ..oauth2 import get_current_user, get_current_student, get_current_teacher, get_current_admin
 
 router = APIRouter(prefix="/enrollments", tags=["Enrollments"])
 
@@ -14,6 +15,7 @@ def enroll_in_course(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_student)
 ):
+    """Student enrolls in a course"""
     # Check if course exists
     course = db.query(Course).filter(Course.id == enrollment_data.course_id).first()
     if not course:
@@ -50,16 +52,22 @@ def get_my_enrollments(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_student)
 ):
-    enrollments = db.query(Enrollment).filter(Enrollment.student_id == current_user.id).all()
+    """Get all courses the current student is enrolled in"""
+    enrollments = db.query(Enrollment).options(
+        joinedload(Enrollment.course),
+        joinedload(Enrollment.student)
+    ).filter(Enrollment.student_id == current_user.id).all()
     return enrollments
 
-@router.get("/course/{course_id}/students", response_model=List[EnrollmentResponse])
+
+@router.get("/course/{course_id}/students")
 def get_course_students(
-    course_id: int,
+    course_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_teacher)
+    current_user: User = Depends(get_current_user)
 ):
-    # Verify teacher owns this course
+    """Get all students enrolled in a specific course (teacher, admin only)"""
+    # Verify course exists
     course = db.query(Course).filter(Course.id == course_id).first()
     if not course:
         raise HTTPException(
@@ -67,21 +75,55 @@ def get_course_students(
             detail="Course not found"
         )
     
-    if course.teacher_id != current_user.id:
+    # Check authorization: must be admin or the teacher who owns the course
+    if current_user.role != UserRole.ADMIN and course.teacher_id != current_user.id:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="You can only view students in your own courses"
         )
     
-    enrollments = db.query(Enrollment).filter(Enrollment.course_id == course_id).all()
-    return enrollments
-
+    # Fetch enrollments with student data eagerly loaded
+    enrollments = db.query(Enrollment).options(
+        joinedload(Enrollment.student),
+        joinedload(Enrollment.course)
+    ).filter(Enrollment.course_id == course_id).all()
+    
+    # Return enriched enrollment data with matric number and department
+    result = []
+    for enrollment in enrollments:
+        result.append({
+            "id": str(enrollment.id),
+            "student_id": str(enrollment.student_id),
+            "course_id": str(enrollment.course_id),
+            "enrolled_at": enrollment.enrolled_at.isoformat(),
+            "student": {
+                "id": str(enrollment.student.id),
+                "email": enrollment.student.email,
+                "username": enrollment.student.username,
+                "full_name": enrollment.student.full_name,
+                "role": enrollment.student.role,
+                "matric_number": enrollment.student.matric_number,
+                "department": enrollment.student.department,
+                "created_at": enrollment.student.created_at.isoformat()
+            } if enrollment.student else None,
+            "course": {
+                "id": str(enrollment.course.id),
+                "title": enrollment.course.title,
+                "course_code": enrollment.course.course_code,
+                "department": enrollment.course.department,
+                "semester": enrollment.course.semester,
+                "credits": enrollment.course.credits
+            } if enrollment.course else None
+        })
+    
+    return result
 @router.delete("/{enrollment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def unenroll(
-    enrollment_id: int,
+    enrollment_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_student)
 ):
+    """Student unenrolls from a course"""
     enrollment = db.query(Enrollment).filter(Enrollment.id == enrollment_id).first()
     
     if not enrollment:

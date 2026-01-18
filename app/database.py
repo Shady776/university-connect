@@ -6,8 +6,8 @@ from dotenv import load_dotenv
 
 load_dotenv()
 
-SQLALCHEMY_DATABASE_URL = os.getenv("DB_URL")
-# SQLALCHEMY_DATABASE_URL =  "sqlite:///./lms.db"
+# SQLALCHEMY_DATABASE_URL = os.getenv("DB_URL")
+SQLALCHEMY_DATABASE_URL =  "sqlite:///./lms.db"
 
 engine = create_engine(
     SQLALCHEMY_DATABASE_URL, 

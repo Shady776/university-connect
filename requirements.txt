@@ -10,3 +10,5 @@ bcrypt==4.3.0
 dotenv
 psycopg2-binary
 cloudinary
+openai
+httpx
