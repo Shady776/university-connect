@@ -13,8 +13,6 @@ from pydantic import BaseModel
 router = APIRouter(prefix="/teacher/dashboard", tags=["Teacher Dashboard"])
 
 
-# ── schemas ───────────────────────────────────────────────────────────────────
-
 class TeacherDashboardStats(BaseModel):
     active_courses: int
     total_students: int
@@ -33,8 +31,6 @@ class TeacherDashboardResponse(BaseModel):
     stats: TeacherDashboardStats
     recent_submissions: List[RecentSubmissionItem]
 
-
-# ── routes ────────────────────────────────────────────────────────────────────
 
 @router.get("")
 async def get_teacher_dashboard(
