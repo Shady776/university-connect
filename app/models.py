@@ -1,254 +1,316 @@
 from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Float, Enum, Boolean, Integer
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
-from sqlalchemy.dialects.postgresql import UUID
 from datetime import datetime, timezone
 import enum
 import uuid
 
 Base = declarative_base()
 
+
+# ── helpers ──────────────────────────────────────────────────────────────────
+
+def generate_uuid5() -> str:
+    """Return a UUID5 string seeded from a random UUID4 value."""
+    return str(uuid.uuid5(uuid.NAMESPACE_OID, str(uuid.uuid4())))
+
+
+# ── enums ────────────────────────────────────────────────────────────────────
+
 class UserRole(str, enum.Enum):
-    ADMIN = "admin"
+    ADMIN   = "admin"
     TEACHER = "teacher"
     STUDENT = "student"
 
 class SubmissionStatus(str, enum.Enum):
-    PENDING = "PENDING"
+    PENDING   = "PENDING"
     SUBMITTED = "SUBMITTED"
-    GRADED = "GRADED"
-    LATE = "LATE"
+    GRADED    = "GRADED"
+    LATE      = "LATE"
 
 class AnnouncementType(str, enum.Enum):
-    INFO = "info"
+    INFO    = "info"
     WARNING = "warning"
     SUCCESS = "success"
-    URGENT = "urgent"
+    URGENT  = "urgent"
 
-# Department Enum
 class Department(str, enum.Enum):
-    CSC = "CSC"  # Computer Science
-    SEN = "SEN"  # Software Engineering
-    IFT = "IFT"  # Information Technology
-    CYB = "CYB"  # Cybersecurity
+    CSC = "CSC"
+    SEN = "SEN"
+    IFT = "IFT"
+    CYB = "CYB"
 
-# Semester Enum
 class Semester(str, enum.Enum):
-    FIRST = "1st"
+    FIRST  = "1st"
     SECOND = "2nd"
 
 class TestType(str, enum.Enum):
     MULTIPLE_CHOICE = "multiple_choice"
-    SUBJECTIVE = "subjective"
-    THEORY = "theory"
-    MIXED = "mixed"
+    SUBJECTIVE      = "subjective"
+    THEORY          = "theory"
+    MIXED           = "mixed"
 
 class TestStatus(str, enum.Enum):
-    DRAFT = "draft"
-    ACTIVE = "active"
-    EXPIRED = "expired"
+    DRAFT    = "draft"
+    ACTIVE   = "active"
+    EXPIRED  = "expired"
     INACTIVE = "inactive"
 
 class QuestionType(str, enum.Enum):
     MULTIPLE_CHOICE = "multiple_choice"
-    FILL_IN_BLANK = "fill_in_blank"
-    THEORY = "theory"
+    FILL_IN_BLANK   = "fill_in_blank"
+    THEORY          = "theory"
 
 class TestAttemptStatus(str, enum.Enum):
-    IN_PROGRESS = "in_progress"
-    SUBMITTED = "submitted"
-    GRADED = "graded"
-    EXPIRED = "expired"
-    INVALIDATED = "invalidated"
+    IN_PROGRESS  = "in_progress"
+    SUBMITTED    = "submitted"
+    GRADED       = "graded"
+    EXPIRED      = "expired"
+    INVALIDATED  = "invalidated"
+
+class NotificationType(str, enum.Enum):
+    TEST_ACTIVATED     = "test_activated"
+    ASSIGNMENT_CREATED = "assignment_created"
+    ASSIGNMENT_UPDATED = "assignment_updated"
+    ASSIGNMENT_GRADED  = "assignment_graded"
+    WARNING            = "warning"
+
+
+# ── models ───────────────────────────────────────────────────────────────────
 
 class User(Base):
     __tablename__ = "users"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    email = Column(String, unique=True, index=True, nullable=False)
-    username = Column(String, unique=True, index=True, nullable=False)
+
+    id              = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    email           = Column(String, unique=True, index=True, nullable=False)
+    username        = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
-    full_name = Column(String, nullable=True)
-    role = Column(Enum(UserRole), nullable=False)
-    matric_number = Column(String, unique=True, index=True, nullable=True)
-    department = Column(Enum(Department), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    
-    # Relationships
+    full_name       = Column(String, nullable=True)
+    role            = Column(Enum(UserRole), nullable=False)
+    matric_number   = Column(String, unique=True, index=True, nullable=True)
+    department      = Column(Enum(Department), nullable=True)
+    created_at      = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
     taught_courses = relationship("Course", back_populates="teacher", foreign_keys="Course.teacher_id")
-    enrollments = relationship("Enrollment", back_populates="student")
-    submissions = relationship("Submission", back_populates="student")
-    announcements = relationship("Announcement", back_populates="author")
+    enrollments    = relationship("Enrollment", back_populates="student")
+    submissions    = relationship("Submission", back_populates="student")
+    announcements  = relationship("Announcement", back_populates="author")
+    notifications  = relationship("Notification", back_populates="user", cascade="all, delete-orphan")
+
 
 class Course(Base):
     __tablename__ = "courses"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    title = Column(String, nullable=False)
+
+    id          = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    title       = Column(String, nullable=False)
     course_code = Column(String, index=True, nullable=True)
     description = Column(Text, nullable=True)
-    department = Column(Enum(Department), nullable=False)
-    semester = Column(Enum(Semester), nullable=False)
-    instructor = Column(String, nullable=True)
-    schedule = Column(String, nullable=True)
-    location = Column(String, nullable=True)
-    credits = Column(Integer, default=3, nullable=False)
-    teacher_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False)
-    
-    # Relationships
-    materials = relationship("CourseMaterial", back_populates="course", cascade="all, delete-orphan")
-    teacher = relationship("User", back_populates="taught_courses", foreign_keys=[teacher_id])
-    assignments = relationship("Assignment", back_populates="course", cascade="all, delete-orphan")
-    enrollments = relationship("Enrollment", back_populates="course", cascade="all, delete-orphan")
+    department  = Column(Enum(Department), nullable=False)
+    semester    = Column(Enum(Semester), nullable=False)
+    instructor  = Column(String, nullable=True)
+    schedule    = Column(String, nullable=True)
+    location    = Column(String, nullable=True)
+    credits     = Column(Integer, default=3, nullable=False)
+    teacher_id  = Column(String(36), ForeignKey("users.id"), nullable=False)
+    created_at  = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    is_active   = Column(Boolean, default=True, nullable=False)
+
+    materials     = relationship("CourseMaterial", back_populates="course", cascade="all, delete-orphan")
+    teacher       = relationship("User", back_populates="taught_courses", foreign_keys=[teacher_id])
+    assignments   = relationship("Assignment", back_populates="course", cascade="all, delete-orphan")
+    enrollments   = relationship("Enrollment", back_populates="course", cascade="all, delete-orphan")
+    # FIX: was back_populates="assignment" — must match Notification.course relationship name
+    notifications = relationship("Notification", back_populates="course", cascade="all, delete-orphan")
+
 
 class Enrollment(Base):
     __tablename__ = "enrollments"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    course_id = Column(UUID(as_uuid=True), ForeignKey("courses.id"), nullable=False)
+
+    id          = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    student_id  = Column(String(36), ForeignKey("users.id"), nullable=False)
+    course_id   = Column(String(36), ForeignKey("courses.id"), nullable=False)
     enrolled_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    
-    # Relationships
+
     student = relationship("User", back_populates="enrollments")
-    course = relationship("Course", back_populates="enrollments")
+    course  = relationship("Course", back_populates="enrollments")
+
 
 class Assignment(Base):
     __tablename__ = "assignments"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    course_id = Column(UUID(as_uuid=True), ForeignKey("courses.id"), nullable=False)
-    title = Column(String, nullable=False)
+
+    id          = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    course_id   = Column(String(36), ForeignKey("courses.id"), nullable=False)
+    title       = Column(String, nullable=False)
     description = Column(Text, nullable=True)
-    max_score = Column(Float, default=100.0, nullable=False)
-    due_date = Column(DateTime(timezone=True), nullable=True)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False)
-    
-    # Relationships
-    course = relationship("Course", back_populates="assignments")
-    submissions = relationship("Submission", back_populates="assignment", cascade="all, delete-orphan")
+    max_score   = Column(Float, default=100.0, nullable=False)
+    due_date    = Column(DateTime(timezone=True), nullable=True)
+    created_at  = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    is_active   = Column(Boolean, default=True, nullable=False)
+
+    course        = relationship("Course", back_populates="assignments")
+    submissions   = relationship("Submission", back_populates="assignment", cascade="all, delete-orphan")
+    notifications = relationship("Notification", back_populates="assignment", cascade="all, delete-orphan")
+
 
 class Submission(Base):
     __tablename__ = "submissions"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    assignment_id = Column(UUID(as_uuid=True), ForeignKey("assignments.id"), nullable=False)
-    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    content = Column(Text, nullable=True)
-    file_url = Column(String, nullable=True)
-    status = Column(Enum(SubmissionStatus), default=SubmissionStatus.SUBMITTED, nullable=False)
-    score = Column(Float, nullable=True)
-    feedback = Column(Text, nullable=True)
-    submitted_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    graded_at = Column(DateTime(timezone=True), nullable=True)
-    
-    # Relationships
+
+    id            = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    assignment_id = Column(String(36), ForeignKey("assignments.id"), nullable=False)
+    student_id    = Column(String(36), ForeignKey("users.id"), nullable=False)
+    content       = Column(Text, nullable=True)
+    file_url      = Column(String, nullable=True)
+    status        = Column(Enum(SubmissionStatus), default=SubmissionStatus.SUBMITTED, nullable=False)
+    score         = Column(Float, nullable=True)
+    feedback      = Column(Text, nullable=True)
+    submitted_at  = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    graded_at     = Column(DateTime(timezone=True), nullable=True)
+
     assignment = relationship("Assignment", back_populates="submissions")
-    student = relationship("User", back_populates="submissions")
+    student    = relationship("User", back_populates="submissions")
+
 
 class Announcement(Base):
     __tablename__ = "announcements"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    title = Column(String, nullable=False)
-    content = Column(Text, nullable=False)
+
+    id                = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    title             = Column(String, nullable=False)
+    content           = Column(Text, nullable=False)
     announcement_type = Column(Enum(AnnouncementType), default=AnnouncementType.INFO, nullable=False)
-    author_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False)
-    
-    # Relationships
+    author_id         = Column(String(36), ForeignKey("users.id"), nullable=False)
+    created_at        = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    is_active         = Column(Boolean, default=True, nullable=False)
+
     author = relationship("User", back_populates="announcements")
-    
+
+
 class CourseMaterial(Base):
     __tablename__ = "course_materials"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    course_id = Column(UUID(as_uuid=True), ForeignKey("courses.id"), nullable=False)
-    title = Column(String, nullable=False)
+
+    id          = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    course_id   = Column(String(36), ForeignKey("courses.id"), nullable=False)
+    title       = Column(String, nullable=False)
     description = Column(Text, nullable=True)
-    file_url = Column(String, nullable=False)
-    file_type = Column(String, nullable=True)  # pdf, doc, ppt, etc.
-    file_size = Column(Integer, nullable=True)  # in bytes
-    uploaded_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
+    file_url    = Column(String, nullable=False)
+    file_type   = Column(String, nullable=True)
+    file_size   = Column(Integer, nullable=True)
+    uploaded_by = Column(String(36), ForeignKey("users.id"), nullable=False)
     uploaded_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    is_active = Column(Boolean, default=True, nullable=False)
-    
-    # Relationships
-    course = relationship("Course", back_populates="materials")
+    is_active   = Column(Boolean, default=True, nullable=False)
+
+    course   = relationship("Course", back_populates="materials")
     uploader = relationship("User")
-    
+
+
 class Test(Base):
     __tablename__ = "tests"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    course_id = Column(UUID(as_uuid=True), ForeignKey("courses.id"), nullable=False)
-    title = Column(String, nullable=False)
-    description = Column(Text, nullable=True)
-    test_type = Column(Enum(TestType), nullable=False)
-    duration_minutes = Column(Integer, nullable=False)
-    total_marks = Column(Float, default=100.0, nullable=False)
+
+    id                  = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    course_id           = Column(String(36), ForeignKey("courses.id"), nullable=False)
+    title               = Column(String, nullable=False)
+    description         = Column(Text, nullable=True)
+    test_type           = Column(Enum(TestType), nullable=False)
+    duration_minutes    = Column(Integer, nullable=False)
+    total_marks         = Column(Float, default=100.0, nullable=False)
     randomize_questions = Column(Boolean, default=True, nullable=False)
-    randomize_options = Column(Boolean, default=True, nullable=False)
-    start_time = Column(DateTime(timezone=True), nullable=True)
-    end_time = Column(DateTime(timezone=True), nullable=True)
-    status = Column(Enum(TestStatus), default=TestStatus.DRAFT, nullable=False)
-    created_by = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    
-    course = relationship("Course", backref="tests")
-    creator = relationship("User", foreign_keys=[created_by])
+    randomize_options   = Column(Boolean, default=True, nullable=False)
+    start_time          = Column(DateTime(timezone=True), nullable=True)
+    end_time            = Column(DateTime(timezone=True), nullable=True)
+    status              = Column(Enum(TestStatus), default=TestStatus.DRAFT, nullable=False)
+    created_by          = Column(String(36), ForeignKey("users.id"), nullable=False)
+    created_at          = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    course    = relationship("Course", backref="tests")
+    creator   = relationship("User", foreign_keys=[created_by])
     questions = relationship("TestQuestion", back_populates="test", cascade="all, delete-orphan")
-    attempts = relationship("TestAttempt", back_populates="test", cascade="all, delete-orphan")
+    attempts  = relationship("TestAttempt", back_populates="test", cascade="all, delete-orphan")
+
 
 class TestQuestion(Base):
     __tablename__ = "test_questions"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    test_id = Column(UUID(as_uuid=True), ForeignKey("tests.id"), nullable=False)
-    question_type = Column(Enum(QuestionType), nullable=False)
-    question_text = Column(Text, nullable=False)
-    marks = Column(Float, nullable=False)
-    order_index = Column(Integer, nullable=False)
-    options = Column(Text, nullable=True)  # JSON string for MCQ options
-    correct_answer = Column(String, nullable=True)
-    acceptable_answers = Column(Text, nullable=True)  # JSON string for subjective
-    
-    test = relationship("Test", back_populates="questions")
+
+    id                 = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    test_id            = Column(String(36), ForeignKey("tests.id"), nullable=False)
+    question_type      = Column(Enum(QuestionType), nullable=False)
+    question_text      = Column(Text, nullable=False)
+    marks              = Column(Float, nullable=False)
+    order_index        = Column(Integer, nullable=False)
+    options            = Column(Text, nullable=True)
+    correct_answer     = Column(String, nullable=True)
+    acceptable_answers = Column(Text, nullable=True)
+
+    test    = relationship("Test", back_populates="questions")
     answers = relationship("TestAnswer", back_populates="question", cascade="all, delete-orphan")
+
 
 class TestAttempt(Base):
     __tablename__ = "test_attempts"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    test_id = Column(UUID(as_uuid=True), ForeignKey("tests.id"), nullable=False)
-    student_id = Column(UUID(as_uuid=True), ForeignKey("users.id"), nullable=False)
-    status = Column(Enum(TestAttemptStatus), default=TestAttemptStatus.IN_PROGRESS, nullable=False)
-    score = Column(Float, nullable=True)
-    total_marks = Column(Float, nullable=False)
-    started_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
-    submitted_at = Column(DateTime(timezone=True), nullable=True)
-    graded_at = Column(DateTime(timezone=True), nullable=True)
-    time_taken_minutes = Column(Integer, nullable=True)
+
+    id                  = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    test_id             = Column(String(36), ForeignKey("tests.id"), nullable=False)
+    student_id          = Column(String(36), ForeignKey("users.id"), nullable=False)
+    status              = Column(Enum(TestAttemptStatus), default=TestAttemptStatus.IN_PROGRESS, nullable=False)
+    score               = Column(Float, nullable=True)
+    total_marks         = Column(Float, nullable=False)
+    started_at          = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+    submitted_at        = Column(DateTime(timezone=True), nullable=True)
+    graded_at           = Column(DateTime(timezone=True), nullable=True)
+    time_taken_minutes  = Column(Integer, nullable=True)
     invalidation_reason = Column(Text, nullable=True)
-    
-    test = relationship("Test", back_populates="attempts")
+
+    test    = relationship("Test", back_populates="attempts")
     student = relationship("User")
     answers = relationship("TestAnswer", back_populates="attempt", cascade="all, delete-orphan")
 
+
 class TestAnswer(Base):
     __tablename__ = "test_answers"
-    
-    id = Column(UUID(as_uuid=True), primary_key=True, default=uuid.uuid4, index=True)
-    attempt_id = Column(UUID(as_uuid=True), ForeignKey("test_attempts.id"), nullable=False)
-    question_id = Column(UUID(as_uuid=True), ForeignKey("test_questions.id"), nullable=False)
-    answer_text = Column(Text, nullable=True)
-    is_correct = Column(Boolean, nullable=True)
-    marks_obtained = Column(Float, nullable=True)
+
+    id               = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    attempt_id       = Column(String(36), ForeignKey("test_attempts.id"), nullable=False)
+    question_id      = Column(String(36), ForeignKey("test_questions.id"), nullable=False)
+    answer_text      = Column(Text, nullable=True)
+    is_correct       = Column(Boolean, nullable=True)
+    marks_obtained   = Column(Float, nullable=True)
     teacher_feedback = Column(Text, nullable=True)
-    
-    attempt = relationship("TestAttempt", back_populates="answers")
+
+    attempt  = relationship("TestAttempt", back_populates="answers")
     question = relationship("TestQuestion", back_populates="answers")
+
+
+class Warning(Base):
+    __tablename__ = "warnings"
+
+    id         = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    student_id = Column(String(36), ForeignKey("users.id"), nullable=False)
+    issued_by  = Column(String(36), ForeignKey("users.id"), nullable=False)
+    course_id  = Column(String(36), ForeignKey("courses.id"), nullable=True)
+    reason     = Column(Text, nullable=False)
+    # Added: lets the sidebar badge track unread warnings
+    is_read    = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
+
+    course   = relationship("Course", foreign_keys=[course_id])
+    student  = relationship("User", foreign_keys=[student_id])
+    issuer   = relationship("User", foreign_keys=[issued_by])
+
+
+class Notification(Base):
+    __tablename__ = "notifications"
+
+    id            = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    user_id       = Column(String(36), ForeignKey("users.id"), nullable=False)
+    type          = Column(Enum(NotificationType), nullable=False)
+    title         = Column(String(255), nullable=False)
+    message       = Column(Text, nullable=False)
+
+    assignment_id = Column(String(36), ForeignKey("assignments.id"), nullable=True)
+    test_id       = Column(String(36), nullable=True)
+    course_id     = Column(String(36), ForeignKey("courses.id"), nullable=True)
+
+    is_read    = Column(Boolean, default=False, nullable=False)
+    created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    user       = relationship("User",       back_populates="notifications")
+    assignment = relationship("Assignment", back_populates="notifications")
+    course     = relationship("Course",     back_populates="notifications")

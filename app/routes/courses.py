@@ -19,16 +19,15 @@ def create_course(
     Create a new course. Only teachers can create courses.
     The instructor name is automatically set from the teacher's profile (full_name).
     """
-    # Automatically set instructor from teacher's full_name
     instructor_name = current_user.full_name if current_user.full_name else current_user.username
     
     new_course = Course(
         title=course_data.title,
         course_code=course_data.course_code,
         description=course_data.description,
-        department=course_data.department,  # NEW: Department field
-        semester=course_data.semester,  # NEW: Semester field
-        instructor=instructor_name,  # Auto-filled from teacher's profile
+        department=course_data.department,
+        semester=course_data.semester,
+        instructor=instructor_name,
         schedule=course_data.schedule,
         location=course_data.location,
         credits=course_data.credits,
@@ -40,6 +39,7 @@ def create_course(
     db.refresh(new_course)
     
     return new_course
+
 
 @router.get("/", response_model=List[CourseResponse])
 def get_all_courses(
@@ -64,6 +64,7 @@ def get_all_courses(
     
     return courses
 
+
 @router.get("/{course_id}", response_model=CourseDetailResponse)
 def get_course(
     course_id: UUID,
@@ -75,7 +76,7 @@ def get_course(
     Teachers can only view their own courses.
     Students can view any active course.
     """
-    course = db.query(Course).filter(Course.id == course_id).first()
+    course = db.query(Course).filter(Course.id == str(course_id)).first()
     
     if not course:
         raise HTTPException(
@@ -83,7 +84,6 @@ def get_course(
             detail="Course not found"
         )
     
-    # Access control
     if current_user.role == "teacher":
         if course.teacher_id != current_user.id:
             raise HTTPException(
@@ -99,6 +99,7 @@ def get_course(
     
     return course
 
+
 @router.put("/{course_id}", response_model=CourseResponse)
 def update_course(
     course_id: UUID,
@@ -108,9 +109,8 @@ def update_course(
 ):
     """
     Update a course. Only the course teacher can update it.
-    Note: instructor field is protected and automatically syncs with teacher's profile.
     """
-    course = db.query(Course).filter(Course.id == course_id).first()
+    course = db.query(Course).filter(Course.id == str(course_id)).first()
     
     if not course:
         raise HTTPException(
@@ -124,18 +124,17 @@ def update_course(
             detail="You can only update your own courses"
         )
     
-    # Update fields if provided
     update_data = course_data.model_dump(exclude_unset=True)
     for field, value in update_data.items():
         setattr(course, field, value)
     
-    # Always sync instructor with current teacher's full_name
     course.instructor = current_user.full_name if current_user.full_name else current_user.username
     
     db.commit()
     db.refresh(course)
     
     return course
+
 
 @router.delete("/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_course(
@@ -147,7 +146,7 @@ def delete_course(
     Delete a course. Only the course teacher can delete it.
     This will also delete all associated assignments and enrollments (cascade).
     """
-    course = db.query(Course).filter(Course.id == course_id).first()
+    course = db.query(Course).filter(Course.id == str(course_id)).first()
     
     if not course:
         raise HTTPException(
@@ -166,6 +165,7 @@ def delete_course(
     
     return None
 
+
 @router.get("/{course_id}/students", response_model=List[dict])
 def get_course_students(
     course_id: UUID,
@@ -175,7 +175,7 @@ def get_course_students(
     """
     Get all students enrolled in a course. Only accessible by the course teacher.
     """
-    course = db.query(Course).filter(Course.id == course_id).first()
+    course = db.query(Course).filter(Course.id == str(course_id)).first()
     
     if not course:
         raise HTTPException(
@@ -190,7 +190,7 @@ def get_course_students(
         )
     
     enrollments = db.query(Enrollment).filter(
-        Enrollment.course_id == course_id
+        Enrollment.course_id == str(course_id)
     ).all()
     
     students = [{

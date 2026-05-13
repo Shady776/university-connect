@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from typing import List
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, date as date_type
 from ..database import get_db
 from ..models import User, Course, Assignment, Submission, Enrollment, SubmissionStatus
 from ..schemas import (
@@ -69,15 +69,15 @@ def get_student_dashboard(
         average_score = 0.0
     
     # Get next deadline
-    now = datetime.utcnow()
+    today = date_type.today()
+    now = datetime.utcnow()  # keep for the > now filter
     upcoming_assignments = [
-        a for a in all_assignments 
-        if a.due_date and a.due_date > now and a.id not in submitted_ids
-    ]
-    
+    a for a in all_assignments 
+    if a.due_date and a.due_date > now and a.id not in submitted_ids
+]
     if upcoming_assignments:
         next_assignment = min(upcoming_assignments, key=lambda a: a.due_date)
-        days_until = (next_assignment.due_date - now).days
+        days_until = (next_assignment.due_date.date() - today).days
         next_deadline_days = max(0, days_until)
     else:
         next_deadline_days = None

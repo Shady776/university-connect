@@ -2,7 +2,8 @@ from pydantic import BaseModel, EmailStr, Field, ConfigDict, field_validator
 from typing import Optional, List, Dict, Any
 from datetime import datetime
 from uuid import UUID
-from .models import UserRole, SubmissionStatus, AnnouncementType, Department, Semester, TestType, TestStatus, QuestionType, TestAttemptStatus
+from .models import (UserRole, SubmissionStatus, AnnouncementType, Department, 
+                     Semester, TestType, TestStatus, QuestionType, TestAttemptStatus, NotificationType)
 import json
 
 
@@ -62,7 +63,7 @@ class Token(BaseModel):
     token_type: str
 
 class TokenData(BaseModel):
-    user_id: Optional[UUID] = None
+    user_id: Optional[str] = None
 
 # Admin Statistics Schemas
 class UserStats(BaseModel):
@@ -195,7 +196,7 @@ class AssignmentBase(BaseModel):
     description: Optional[str] = None
     max_score: float = 100.0
     due_date: Optional[datetime] = None
-    grading_criteria: Optional[str] = None
+    # grading_criteria: Optional[str] = None
 
 class AssignmentCreate(AssignmentBase):
     course_id: UUID
@@ -682,3 +683,21 @@ class StudentTestAttemptInfo(BaseModel):
     submitted_at: Optional[datetime] = None
     
     model_config = ConfigDict(from_attributes=True)
+    
+class NotificationResponse(BaseModel):
+    id:            str
+    type:          NotificationType
+    title:         str
+    message:       str
+    assignment_id: Optional[str] = None
+    test_id:       Optional[str] = None
+    course_id:     Optional[str] = None
+    is_read:       bool
+    created_at:    datetime
+ 
+    class Config:
+        from_attributes = True
+ 
+ 
+class NotificationCountResponse(BaseModel):
+    total_unread: int

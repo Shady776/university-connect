@@ -18,6 +18,7 @@ def setup_admin():
         db.add(new_user)
         db.commit()
         db.refresh(new_user)
+        print("ADMIN CREATED SUCCESSFULLY!!!")
     except IntegrityError:
         print("ADMIN ALREADY EXISTS")
     finally:

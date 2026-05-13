@@ -5,7 +5,7 @@ from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
 from sqlalchemy.orm import Session
 from .database import get_db
-from .models import User
+from .models import User, UserRole
 from .schemas import TokenData
 from app.config import CONFIG
 
@@ -29,11 +29,9 @@ def verify_access_token(token: str, credentials_exception) -> TokenData:
     try:
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id: str = payload.get("sub")
-        role: str = payload.get("role")  # Extract role from token
         if user_id is None:
             raise credentials_exception
-        token_data = TokenData(user_id=user_id)
-        return token_data
+        return TokenData(user_id=user_id)
     except JWTError:
         raise credentials_exception
 
@@ -53,7 +51,7 @@ def get_current_user(token: str = Depends(oauth2_scheme), db: Session = Depends(
     return user
 
 def get_current_teacher(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role != "teacher":
+    if current_user.role != UserRole.TEACHER:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only teachers can perform this action"
@@ -61,7 +59,7 @@ def get_current_teacher(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 def get_current_student(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role != "student":
+    if current_user.role != UserRole.STUDENT:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only students can perform this action"
@@ -69,7 +67,7 @@ def get_current_student(current_user: User = Depends(get_current_user)) -> User:
     return current_user
 
 def get_current_admin(current_user: User = Depends(get_current_user)) -> User:
-    if current_user.role != "admin":
+    if current_user.role != UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Only admins can perform this action"

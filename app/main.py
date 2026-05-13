@@ -2,7 +2,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from .database import init_db
 from .routes import (auth, courses, assignments, users, submissions, enrollments, 
-                     admin, dashboard, announcements, teacher_dashboard, course_materials, test)
+                     admin, dashboard, announcements, teacher_dashboard, course_materials, test, warnings, Notifications)
 from contextlib import asynccontextmanager
 from app.utils.admin import setup_admin
 
@@ -26,7 +26,7 @@ app = FastAPI(
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure appropriately for production
+    allow_origins=["*"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -48,6 +48,8 @@ app.include_router(users.router)
 app.include_router(announcements.router)
 app.include_router(course_materials.router)
 app.include_router(test.router)
+app.include_router(warnings.router)
+app.include_router(Notifications.router)
 
 @app.get("/")
 def root():
