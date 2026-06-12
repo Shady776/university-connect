@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, status, UploadFile, File, Form
 from sqlalchemy.orm import Session, joinedload
 from typing import List, Optional
-from datetime import datetime
+from datetime import datetime, timezone
 from uuid import UUID
 import cloudinary
 import cloudinary.uploader
@@ -101,7 +101,7 @@ async def submit_assignment(
             raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail=f"Failed to upload file: {str(e)}")
 
     submission_status = SubmissionStatus.SUBMITTED
-    if assignment.due_date and datetime.utcnow() > assignment.due_date:
+    if assignment.due_date and datetime.now(timezone.utc) > assignment.due_date:
         submission_status = SubmissionStatus.LATE
 
     new_submission = Submission(

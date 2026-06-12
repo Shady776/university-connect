@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, desc
 from typing import List, Optional
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from uuid import UUID
 from ..database import get_db
 from ..models import User, Course, Assignment, Submission, Enrollment, UserRole, SubmissionStatus
@@ -369,7 +369,7 @@ def get_recent_activity(
     limit: int = 3
 ):
     """Get detailed activity statistics for the last N days"""
-    cutoff_date = datetime.utcnow() - timedelta(days=days)
+    cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
     
     # Get counts for summary
     new_users = db.query(User).filter(User.created_at >= cutoff_date).count()

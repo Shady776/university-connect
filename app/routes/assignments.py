@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from typing import List
 from uuid import UUID
-from datetime import datetime
+from datetime import datetime, timezone
 from ..database import get_db
 from ..models import Assignment, Course, User, Enrollment, Submission, UserRole, NotificationType
 from ..schemas import AssignmentCreate, AssignmentResponse, AssignmentUpdate, AssignmentDetailResponse, SubmissionAIGradeRequest, SubmissionStatus
@@ -101,7 +101,7 @@ async def batch_grade_with_ai(
                 submission.score = grading_result.score
                 submission.feedback = grading_result.feedback
                 submission.status = SubmissionStatus.GRADED
-                submission.graded_at = datetime.utcnow()
+                submission.graded_at = datetime.now(timezone.utc)
 
                 # ── TRIGGER 3 (batch): Notify each student their assignment was graded ──
                 fan_out(
