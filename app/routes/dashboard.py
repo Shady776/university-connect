@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, status
 from sqlalchemy.orm import Session
 from sqlalchemy import func, and_
 from typing import List
-from datetime import datetime, timedelta, date as date_type
+from datetime import datetime, timedelta, timezone, date as date_type
 from ..database import get_db
 from ..models import User, Course, Assignment, Submission, Enrollment, SubmissionStatus
 from ..schemas import (
@@ -70,7 +70,7 @@ def get_student_dashboard(
     
     # Get next deadline
     today = date_type.today()
-    now = datetime.utcnow()  # keep for the > now filter
+    now = datetime.now(timezone.utc)
     upcoming_assignments = [
     a for a in all_assignments 
     if a.due_date and a.due_date > now and a.id not in submitted_ids
