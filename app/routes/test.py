@@ -643,7 +643,7 @@ def submit_test(
 def get_test_statistics(
     test_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_teacher)
+    current_user: User = Depends(get_current_user)
 ):
     """Get test statistics including enrolled vs attempted students"""
     test = db.query(Test).filter(Test.id == str(test_id)).first()
@@ -652,8 +652,8 @@ def get_test_statistics(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
 
     course = db.query(Course).filter(Course.id == test.course_id).first()
-    if course.teacher_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only view statistics for your courses")
+    if current_user.role == UserRole.TEACHER and course.teacher_id != current_user.id:
+            raise HTTPException(403, "You can only view statistics for your courses")
 
     total_enrolled = db.query(func.count(Enrollment.id)).filter(
         Enrollment.course_id == test.course_id
@@ -694,7 +694,7 @@ def get_test_statistics(
 def get_students_test_status(
     test_id: UUID,
     db: Session = Depends(get_db),
-    current_user: User = Depends(get_current_teacher)
+    current_user: User = Depends(get_current_user)
 ):
     """Get list of enrolled students and their test attempt status"""
     test = db.query(Test).filter(Test.id == str(test_id)).first()
@@ -703,8 +703,8 @@ def get_students_test_status(
         raise HTTPException(status_code=status.HTTP_404_NOT_FOUND, detail="Test not found")
 
     course = db.query(Course).filter(Course.id == test.course_id).first()
-    if course.teacher_id != current_user.id:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only view statistics for your courses")
+    if current_user.role == UserRole.TEACHER and course.teacher_id != current_user.id:
+            raise HTTPException(403, "You can only view statistics for your courses")
 
     enrollments = db.query(Enrollment).options(
         joinedload(Enrollment.student)

@@ -6,7 +6,7 @@ from typing import Optional
 
 from ..database import get_db
 from ..models import Warning, Course, User, UserRole, NotificationType
-from ..oauth2 import get_current_user, get_current_student
+from ..oauth2 import get_current_admin, get_current_user, get_current_student
 from .Notifications import fan_out
 
 router = APIRouter(prefix="/warnings", tags=["Warnings"])
@@ -130,3 +130,31 @@ def mark_my_warnings_read(
     ).update({"is_read": True}, synchronize_session=False)
     db.commit()
     return {"message": "All warnings marked as read"}
+
+
+@router.get("/all", dependencies=[Depends(get_current_admin)])
+def get_all_warnings(db: Session = Depends(get_db)):
+    """Admin: get every warning across the platform."""
+    warnings = (
+        db.query(Warning)
+        .order_by(Warning.created_at.desc())
+        .all()
+    )
+    # Enrich with teacher info
+    return [
+        {
+            "id": str(w.id),
+            "student_id": str(w.student_id),
+            "student_name": w.student.full_name or w.student.username if w.student else "Unknown",
+            "student_email": w.student.email if w.student else None,
+            "issued_by": str(w.issued_by),
+            "teacher_name": w.issuer.full_name or w.issuer.username if hasattr(w, 'issuer') and w.issuer else None,
+            "course_id": str(w.course_id) if w.course_id else None,
+            "course_code": w.course.course_code if w.course_id and w.course else None,
+            "course_name": w.course.title if w.course_id and w.course else None,
+            "reason": w.reason,
+            "is_read": w.is_read,
+            "created_at": w.created_at.isoformat()
+        }
+        for w in warnings
+    ]

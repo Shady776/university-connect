@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, status, Query
 from sqlalchemy.orm import Session, joinedload
 from sqlalchemy import func, desc
 from typing import List, Optional
@@ -7,20 +7,27 @@ from uuid import UUID
 from ..database import get_db
 from ..models import User, Course, Assignment, Submission, Enrollment, UserRole, SubmissionStatus
 from ..schemas import (
-    UserBase, UserResponse, CourseResponse, AssignmentResponse, 
+    CourseCreate, UserBase, UserResponse, CourseResponse, AssignmentResponse,
     SubmissionDetailResponse, EnrollmentResponse, SystemOverview,
     RecentActivity, TopCourse, TeacherPerformance, StudentPerformance,
     UserStats, CourseStats, AssignmentStats, SubmissionStats, EnrollmentStats, AdminUpdateProfile
 )
 from ..oauth2 import get_current_admin, get_current_user
 from passlib.context import CryptContext
+from pydantic import BaseModel
 
 router = APIRouter(prefix="/admin", tags=["Admin"])
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+
 def hash_password(password: str) -> str:
     return pwd_context.hash(password)
+
+
+class ResetPasswordRequest(BaseModel):
+    new_password: str
+
 
 # ==================== USER MANAGEMENT ====================
 
@@ -31,131 +38,222 @@ def create_teacher(
     current_user: User = Depends(get_current_admin)
 ):
     """Admin can create teacher accounts"""
-    # Check if user exists
     existing_user = db.query(User).filter(
         (User.email == teacher_data.email) | (User.username == teacher_data.username)
     ).first()
-    
+
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User with this email or username already exists"
         )
-    
-    # Force role to be teacher
+
     hashed_pwd = hash_password(teacher_data.password)
     new_teacher = User(
         email=teacher_data.email,
         username=teacher_data.username,
         full_name=teacher_data.full_name,
-        role=UserRole.TEACHER,
-        hashed_password=hashed_pwd
+        role=UserRole.TEACHER,  # always forced to TEACHER regardless of body
+        hashed_password=hashed_pwd,
+        department=getattr(teacher_data, "department", None)
     )
-    
+
     db.add(new_teacher)
     db.commit()
     db.refresh(new_teacher)
-    
+
     return new_teacher
 
-@router.post("/users/student", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def create_student(
-    student_data: UserBase,
+
+@router.post("/users/admin", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
+def create_admin(
+    admin_data: UserBase,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
-    """Admin can create student accounts"""
+    """Admin can create other admin accounts"""
     existing_user = db.query(User).filter(
-        (User.email == student_data.email) | (User.username == student_data.username)
+        (User.email == admin_data.email) | (User.username == admin_data.username)
     ).first()
-    
+
     if existing_user:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="User with this email or username already exists"
         )
-    
-    hashed_pwd = hash_password(student_data.password)
-    new_student = User(
-        email=student_data.email,
-        username=student_data.username,
-        full_name=student_data.full_name,
-        role=UserRole.STUDENT,
-        hashed_password=hashed_pwd
+
+    hashed_pwd = hash_password(admin_data.password)
+    new_admin = User(
+        email=admin_data.email,
+        username=admin_data.username,
+        full_name=admin_data.full_name,
+        role=UserRole.ADMIN,  # always forced to ADMIN regardless of body
+        hashed_password=hashed_pwd,
+        department=getattr(admin_data, "department", None)
     )
-    
-    db.add(new_student)
+
+    db.add(new_admin)
     db.commit()
-    db.refresh(new_student)
-    
-    return new_student
+    db.refresh(new_admin)
+
+    return new_admin
+
 
 @router.get("/users", response_model=List[UserResponse])
 def get_all_users(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin),
-    role: Optional[UserRole] = None,
+    # Accept role as a plain string so "teacher" / "admin" / "student"
+    # from the query string are matched directly against the stored enum value.
+    role: Optional[str] = Query(default=None),
     skip: int = 0,
     limit: int = 100
 ):
     """Get all users with optional role filter"""
     query = db.query(User)
-    
+
     if role:
-        query = query.filter(User.role == role)
-    
+        # UserRole enum values are stored as their string value in the DB
+        # e.g. UserRole.TEACHER == "teacher", so compare against the value directly.
+        try:
+            role_enum = UserRole(role.lower())
+            query = query.filter(User.role == role_enum)
+        except ValueError:
+            raise HTTPException(
+                status_code=status.HTTP_400_BAD_REQUEST,
+                detail=f"Invalid role '{role}'. Must be one of: {[r.value for r in UserRole]}"
+            )
+
     users = query.offset(skip).limit(limit).all()
     return users
 
+
 @router.get("/users/{user_id}", response_model=UserResponse)
 def get_user(
-    user_id: UUID,  # Changed from int to UUID
+    user_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
     """Get specific user details"""
     user = db.query(User).filter(User.id == user_id).first()
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    
+
     return user
+
+
+@router.put("/users/{user_id}/reset-password", status_code=status.HTTP_200_OK)
+def reset_user_password(
+    user_id: UUID,
+    body: ResetPasswordRequest,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+):
+    """Admin resets any user's password"""
+    user = db.query(User).filter(User.id == user_id).first()
+
+    if not user:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    if len(body.new_password) < 6:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 6 characters"
+        )
+
+    user.hashed_password = hash_password(body.new_password)
+    db.commit()
+
+    return {"detail": "Password reset successfully"}
+
 
 @router.delete("/users/{user_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_user(
-    user_id: UUID,  # Changed from int to UUID
+    user_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
     """Delete a user (cannot delete self or other admins)"""
     user = db.query(User).filter(User.id == user_id).first()
-    
+
     if not user:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="User not found"
         )
-    
+
     if user.id == current_user.id:
         raise HTTPException(
             status_code=status.HTTP_400_BAD_REQUEST,
             detail="Cannot delete yourself"
         )
-    
+
     if user.role == UserRole.ADMIN:
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Cannot delete other admins"
         )
-    
+
     db.delete(user)
     db.commit()
-    
+
     return None
+
+
 # ==================== COURSE MANAGEMENT ====================
+
+@router.post("/courses", response_model=CourseResponse, status_code=status.HTTP_201_CREATED)
+def admin_create_course(
+    teacher_id: UUID,
+    course_data: CourseCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+):
+    """Admin creates a course on behalf of a teacher."""
+    teacher = db.query(User).filter(
+        User.id == teacher_id
+    ).first()
+
+    if not teacher:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="User not found"
+        )
+
+    if teacher.role != UserRole.TEACHER:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Specified user is not a teacher"
+        )
+
+    instructor_name = teacher.full_name if teacher.full_name else teacher.username
+
+    new_course = Course(
+        title=course_data.title,
+        course_code=course_data.course_code,
+        description=course_data.description,
+        department=course_data.department,
+        semester=course_data.semester,
+        instructor=instructor_name,
+        schedule=course_data.schedule,
+        location=course_data.location,
+        credits=course_data.credits,
+        teacher_id=teacher.id
+    )
+
+    db.add(new_course)
+    db.commit()
+    db.refresh(new_course)
+
+    return new_course
+
 
 @router.get("/courses", response_model=List[CourseResponse])
 def get_all_courses(
@@ -168,25 +266,45 @@ def get_all_courses(
     courses = db.query(Course).offset(skip).limit(limit).all()
     return courses
 
+@router.put("/courses/{course_id}", response_model=CourseResponse)
+def admin_update_course(
+    course_id: UUID,
+    course_data: CourseCreate,
+    db: Session = Depends(get_db),
+    current_user: User = Depends(get_current_admin)
+):
+    course = db.query(Course).filter(Course.id == str(course_id)).first()
+    if not course:
+        raise HTTPException(status_code=404, detail="Course not found")
+
+    for field, value in course_data.model_dump(exclude_unset=True).items():
+        setattr(course, field, value)
+
+    db.commit()
+    db.refresh(course)
+    return course
+
 @router.delete("/courses/{course_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_course(
-    course_id: UUID,  # Changed from int to UUID
+    course_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
     """Delete any course"""
-    course = db.query(Course).filter(Course.id == course_id).first()
-    
+    course = db.query(Course).filter(Course.id == str(course_id)).first()
+
     if not course:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Course not found"
         )
-    
+
     db.delete(course)
     db.commit()
-    
+
     return None
+
+
 # ==================== ASSIGNMENT MANAGEMENT ====================
 
 @router.get("/assignments", response_model=List[AssignmentResponse])
@@ -200,6 +318,7 @@ def get_all_assignments(
     assignments = db.query(Assignment).offset(skip).limit(limit).all()
     return assignments
 
+
 @router.get("/assignments/{assignment_id}/submissions", response_model=List[SubmissionDetailResponse])
 def get_assignment_submissions(
     assignment_id: UUID,
@@ -209,16 +328,14 @@ def get_assignment_submissions(
     limit: int = 100
 ):
     """Get all submissions for a specific assignment (admin only)"""
-    # Verify assignment exists
     assignment = db.query(Assignment).filter(Assignment.id == assignment_id).first()
-    
+
     if not assignment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Assignment not found"
         )
-    
-    # Fetch submissions with student data eagerly loaded
+
     submissions = db.query(Submission).options(
         joinedload(Submission.student),
         joinedload(Submission.assignment)
@@ -226,28 +343,31 @@ def get_assignment_submissions(
      .offset(skip)\
      .limit(limit)\
      .all()
-    
+
     return submissions
+
 
 @router.delete("/assignments/{assignment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_assignment(
-    assignment_id: UUID,  # Changed from int to UUID
+    assignment_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
     """Delete any assignment"""
     assignment = db.query(Assignment).filter(Assignment.id == assignment_id).first()
-    
+
     if not assignment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Assignment not found"
         )
-    
+
     db.delete(assignment)
     db.commit()
-    
+
     return None
+
+
 # ==================== SUBMISSION MANAGEMENT ====================
 
 @router.get("/submissions", response_model=List[SubmissionDetailResponse])
@@ -260,32 +380,35 @@ def get_all_submissions(
 ):
     """Get all submissions with optional status filter"""
     query = db.query(Submission)
-    
+
     if status_filter:
         query = query.filter(Submission.status == status_filter)
-    
+
     submissions = query.offset(skip).limit(limit).all()
     return submissions
 
+
 @router.delete("/submissions/{submission_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_submission(
-    submission_id: UUID,  # Changed from int to UUID
+    submission_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
     """Delete any submission"""
     submission = db.query(Submission).filter(Submission.id == submission_id).first()
-    
+
     if not submission:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Submission not found"
         )
-    
+
     db.delete(submission)
     db.commit()
-    
+
     return None
+
+
 # ==================== ENROLLMENT MANAGEMENT ====================
 
 @router.get("/enrollments", response_model=List[EnrollmentResponse])
@@ -299,25 +422,27 @@ def get_all_enrollments(
     enrollments = db.query(Enrollment).offset(skip).limit(limit).all()
     return enrollments
 
+
 @router.delete("/enrollments/{enrollment_id}", status_code=status.HTTP_204_NO_CONTENT)
 def delete_enrollment(
-    enrollment_id: UUID,  # Changed from int to UUID
+    enrollment_id: UUID,
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_admin)
 ):
     """Delete any enrollment"""
     enrollment = db.query(Enrollment).filter(Enrollment.id == enrollment_id).first()
-    
+
     if not enrollment:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND,
             detail="Enrollment not found"
         )
-    
+
     db.delete(enrollment)
     db.commit()
-    
+
     return None
+
 
 # ==================== STATISTICS & ANALYTICS ====================
 
@@ -337,7 +462,7 @@ def get_system_overview(
     graded_submissions = db.query(Submission).filter(Submission.status == SubmissionStatus.GRADED).count()
     pending_submissions = db.query(Submission).filter(Submission.status == SubmissionStatus.PENDING).count()
     total_enrollments = db.query(Enrollment).count()
-    
+
     return SystemOverview(
         users=UserStats(
             total=total_users,
@@ -361,6 +486,7 @@ def get_system_overview(
         )
     )
 
+
 @router.get("/statistics/recent-activity")
 def get_recent_activity(
     db: Session = Depends(get_db),
@@ -370,17 +496,15 @@ def get_recent_activity(
 ):
     """Get detailed activity statistics for the last N days"""
     cutoff_date = datetime.now(timezone.utc) - timedelta(days=days)
-    
-    # Get counts for summary
+
     new_users = db.query(User).filter(User.created_at >= cutoff_date).count()
     new_courses = db.query(Course).filter(Course.created_at >= cutoff_date).count()
     new_assignments = db.query(Assignment).filter(Assignment.created_at >= cutoff_date).count()
     new_submissions = db.query(Submission).filter(Submission.submitted_at >= cutoff_date).count()
     new_enrollments = db.query(Enrollment).filter(Enrollment.enrolled_at >= cutoff_date).count()
-    
+
     activities = []
-    
-    # Get recent users
+
     recent_users = db.query(User).filter(User.created_at >= cutoff_date).order_by(desc(User.created_at)).limit(5).all()
     for user in recent_users:
         activities.append({
@@ -391,8 +515,7 @@ def get_recent_activity(
             'user_name': user.full_name,
             'created_at': user.created_at
         })
-    
-    # Get recent courses
+
     recent_courses = db.query(Course).options(joinedload(Course.teacher)).filter(
         Course.created_at >= cutoff_date
     ).order_by(desc(Course.created_at)).limit(5).all()
@@ -405,8 +528,7 @@ def get_recent_activity(
             'user_name': course.teacher.full_name if course.teacher else 'Unknown',
             'created_at': course.created_at
         })
-    
-    # Get recent assignments
+
     recent_assignments = db.query(Assignment).options(
         joinedload(Assignment.course).joinedload(Course.teacher)
     ).filter(Assignment.created_at >= cutoff_date).order_by(desc(Assignment.created_at)).limit(5).all()
@@ -419,8 +541,7 @@ def get_recent_activity(
             'user_name': assignment.course.teacher.full_name if assignment.course and assignment.course.teacher else 'Unknown',
             'created_at': assignment.created_at
         })
-    
-    # Get recent submissions
+
     recent_submissions = db.query(Submission).options(
         joinedload(Submission.student),
         joinedload(Submission.assignment)
@@ -434,8 +555,7 @@ def get_recent_activity(
             'user_name': submission.student.full_name if submission.student else 'Unknown',
             'created_at': submission.submitted_at
         })
-    
-    # Get recent enrollments
+
     recent_enrollments = db.query(Enrollment).options(
         joinedload(Enrollment.student),
         joinedload(Enrollment.course)
@@ -449,11 +569,10 @@ def get_recent_activity(
             'user_name': enrollment.student.full_name if enrollment.student else 'Unknown',
             'created_at': enrollment.enrolled_at
         })
-    
-    # Sort all activities by date and limit
+
     activities.sort(key=lambda x: x['created_at'], reverse=True)
     activities = activities[:limit]
-    
+
     return {
         'period_days': days,
         'activities': activities,
@@ -466,6 +585,8 @@ def get_recent_activity(
             'new_enrollments': new_enrollments
         }
     }
+
+
 @router.get("/statistics/top-courses", response_model=List[TopCourse])
 def get_top_courses(
     db: Session = Depends(get_db),
@@ -481,7 +602,7 @@ def get_top_courses(
      .order_by(desc("enrollment_count"))\
      .limit(limit)\
      .all()
-    
+
     result = []
     for course, count in top_courses:
         result.append(TopCourse(
@@ -490,8 +611,9 @@ def get_top_courses(
             teacher_id=course.teacher_id,
             enrollment_count=count
         ))
-    
+
     return result
+
 
 @router.get("/statistics/teacher-performance", response_model=List[TeacherPerformance])
 def get_teacher_performance(
@@ -500,20 +622,19 @@ def get_teacher_performance(
 ):
     """Get performance metrics for all teachers"""
     teachers = db.query(User).filter(User.role == UserRole.TEACHER).all()
-    
+
     result = []
     for teacher in teachers:
         courses_count = db.query(Course).filter(Course.teacher_id == teacher.id).count()
         assignments_count = db.query(Assignment).join(Course)\
             .filter(Course.teacher_id == teacher.id).count()
-        
-        # Count submissions that need grading
+
         pending_grading = db.query(Submission).join(Assignment).join(Course)\
             .filter(
                 Course.teacher_id == teacher.id,
                 Submission.status.in_([SubmissionStatus.SUBMITTED, SubmissionStatus.LATE])
             ).count()
-        
+
         result.append(TeacherPerformance(
             teacher_id=teacher.id,
             teacher_name=teacher.full_name,
@@ -522,8 +643,9 @@ def get_teacher_performance(
             assignments_count=assignments_count,
             pending_grading=pending_grading
         ))
-    
+
     return result
+
 
 @router.get("/statistics/student-performance", response_model=List[StudentPerformance])
 def get_student_performance(
@@ -546,7 +668,7 @@ def get_student_performance(
      .order_by(desc("avg_score"))\
      .limit(limit)\
      .all()
-    
+
     result = []
     for student, avg_score, submission_count in students:
         result.append(StudentPerformance(
@@ -556,8 +678,9 @@ def get_student_performance(
             average_score=round(avg_score, 2) if avg_score else 0,
             total_submissions=submission_count
         ))
-    
+
     return result
+
 
 @router.put("/me", response_model=UserResponse)
 def update_current_user_profile(
@@ -565,55 +688,48 @@ def update_current_user_profile(
     db: Session = Depends(get_db),
     current_user: User = Depends(get_current_user)
 ):
-    """
-    Update current user's profile information
-    """
-    # Check if email is being changed and if it's already taken
+    """Update current user's profile information"""
     if profile_data.email and profile_data.email != current_user.email:
         existing_user = db.query(User).filter(
             User.email == profile_data.email,
             User.id != current_user.id
         ).first()
-        
+
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already in use by another user"
             )
         current_user.email = profile_data.email
-    
-    # Check if username is being changed and if it's already taken
+
     if profile_data.username and profile_data.username.lower().strip() != current_user.username:
         username_lower = profile_data.username.lower().strip()
-        
-        # Validate username is not empty
+
         if not username_lower:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Username cannot be empty"
             )
-        
+
         existing_user = db.query(User).filter(
             User.username == username_lower,
             User.id != current_user.id
         ).first()
-        
+
         if existing_user:
             raise HTTPException(
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Username already taken"
             )
         current_user.username = username_lower
-    
-    # Update full_name if provided
+
     if profile_data.full_name is not None:
         current_user.full_name = profile_data.full_name
-    
-    # Update department if provided
+
     if profile_data.department is not None:
         current_user.department = profile_data.department
-    
+
     db.commit()
     db.refresh(current_user)
-    
+
     return current_user

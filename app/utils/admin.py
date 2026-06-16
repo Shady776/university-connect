@@ -12,7 +12,7 @@ def setup_admin():
             username=CONFIG.ADMIN_USERNAME,
             email=CONFIG.ADMIN_EMAIL,
             full_name=CONFIG.ADMIN_FULLNAME,
-            role=UserRole.TEACHER,
+            role=UserRole.ADMIN,
             hashed_password=hash_password(CONFIG.ADMIN_PASSWORD)
         )
         db.add(new_user)
