@@ -1,11 +1,12 @@
 from app.schemas import UserBase
-from fastapi import APIRouter, Depends, HTTPException, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 from ..database import get_db
-from ..models import User
+from ..models import User, UserRole
 from ..schemas import UserBase, UserResponse, UserLogin, Token
 from ..oauth2 import create_access_token
 from ..utils.password_hash import hash_password, verify_password
+from ..utils.rate_limit import limiter
 from fastapi.security import OAuth2PasswordRequestForm
 
 router = APIRouter(prefix="/auth", tags=["Authentication"])
@@ -26,7 +27,8 @@ def authenticate_user(db: Session, username: str, password: str):
 
 
 @router.post("/register", response_model=UserResponse, status_code=status.HTTP_201_CREATED)
-def register(user_data: UserBase, db: Session = Depends(get_db)):
+@limiter.limit("10/minute")
+def register(request: Request, user_data: UserBase, db: Session = Depends(get_db)):
     # Convert username to lowercase and strip whitespace
     username_lower = user_data.username.lower().strip()
     
@@ -62,7 +64,11 @@ def register(user_data: UserBase, db: Session = Depends(get_db)):
         full_name=user_data.full_name,
         matric_number=user_data.matric_number,
         department=user_data.department,
-        role=user_data.role,
+        # SECURITY: self-registration must never trust a client-supplied role.
+        # Anyone could otherwise POST {"role": "admin"} and create an admin
+        # account directly. Teacher/admin accounts are created only through
+        # the admin-only endpoints in routes/admin.py.
+        role=UserRole.STUDENT,
         hashed_password=hashed_pwd
     )
     
@@ -74,7 +80,9 @@ def register(user_data: UserBase, db: Session = Depends(get_db)):
 
 
 @router.post("/login", response_model=Token)
+@limiter.limit("5/minute")
 def login(
+    request: Request,
     form_data: OAuth2PasswordRequestForm = Depends(),
     db: Session = Depends(get_db)
 ):

@@ -18,11 +18,22 @@ from ..schemas import (
 )
 from ..oauth2 import get_current_user, get_current_student, get_current_teacher
 from ..services.ai_grading_service import AIGradingService
+from ..utils.file_validation import validate_upload_file
+from ..utils.file_extraction import extract_gradable_text, fetch_file_bytes, ExtractionError, TEXT_EXTENSIONS
 from .Notifications import fan_out
 
 load_dotenv()
 
 router = APIRouter(prefix="/submissions", tags=["Submissions"])
+
+# Submissions can be documents, archives, images of handwritten work, or
+# source code — TEXT_EXTENSIONS covers the code/text formats AI grading
+# knows how to read (kept in file_extraction.py as the single source of
+# truth so the two stay in sync).
+SUBMISSION_ALLOWED_EXTENSIONS = {
+    'pdf', 'doc', 'docx', 'ppt', 'pptx', 'zip', 'rar',
+    'png', 'jpg', 'jpeg'
+} | TEXT_EXTENSIONS
 
 cloudinary.config(
     cloud_name=os.getenv("CLOUDINARY_CLOUD_NAME"),
@@ -89,6 +100,7 @@ async def submit_assignment(
 
     file_url = None
     if file:
+        validate_upload_file(file, allowed_extensions=SUBMISSION_ALLOWED_EXTENSIONS, max_size_bytes=50 * 1024 * 1024)
         try:
             upload_result = cloudinary.uploader.upload(
                 file.file,
@@ -216,6 +228,7 @@ async def update_submission(
         submission.content = content
 
     if file:
+        validate_upload_file(file, allowed_extensions=SUBMISSION_ALLOWED_EXTENSIONS, max_size_bytes=50 * 1024 * 1024)
         try:
             if submission.file_url:
                 try:
@@ -253,18 +266,32 @@ async def grade_submission_with_ai(
     if submission.assignment.course.teacher_id != current_user.id:
         raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="You can only grade submissions for your own courses")
 
-    if not submission.content:
-        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Cannot grade submission without text content. AI grading only works for text submissions.")
+    if not submission.content and not submission.file_url:
+        raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="This submission has no content or file to grade")
 
     criteria = grade_request.criteria
     if not criteria:
         raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail="Please provide grading criteria for AI grading")
 
+    # Prefer plain text content if present; otherwise pull text out of
+    # whatever file the student uploaded (code, PDF, DOCX, or a ZIP project).
+    if submission.content:
+        gradable_text = submission.content
+    else:
+        try:
+            file_bytes = await fetch_file_bytes(submission.file_url)
+            filename = submission.file_url.rsplit("/", 1)[-1]
+            gradable_text = extract_gradable_text(file_bytes, filename)
+        except ExtractionError as e:
+            raise HTTPException(status_code=status.HTTP_400_BAD_REQUEST, detail=str(e))
+        except Exception as e:
+            raise HTTPException(status_code=status.HTTP_502_BAD_GATEWAY, detail=f"Could not retrieve the submitted file: {e}")
+
     try:
         ai_service     = AIGradingService()
         assignment     = submission.assignment
         grading_result = await ai_service.grade_submission(
-            submission_content=submission.content,
+            submission_content=gradable_text,
             assignment_title=assignment.title,
             assignment_description=assignment.description or "",
             max_score=assignment.max_score,

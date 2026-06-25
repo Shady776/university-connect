@@ -13,3 +13,7 @@ cloudinary
 openai
 httpx
 pydantic_ai
+slowapi
+uuid6
+pypdf
+python-docx

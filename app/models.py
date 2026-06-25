@@ -2,17 +2,16 @@ from sqlalchemy import Column, String, DateTime, ForeignKey, Text, Float, Enum, 
 from sqlalchemy.orm import relationship
 from sqlalchemy.ext.declarative import declarative_base
 from datetime import datetime, timezone
+from uuid6 import uuid7
 import enum
-import uuid
 
 Base = declarative_base()
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
 
-def generate_uuid5() -> str:
-    """Return a UUID5 string seeded from a random UUID4 value."""
-    return str(uuid.uuid5(uuid.NAMESPACE_OID, str(uuid.uuid4())))
+def generate_uuid7() -> str:
+    return str(uuid7())
 
 
 # ── enums ────────────────────────────────────────────────────────────────────
@@ -81,7 +80,7 @@ class NotificationType(str, enum.Enum):
 class User(Base):
     __tablename__ = "users"
 
-    id              = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    id              = Column(String(36), primary_key=True, default=generate_uuid7, index=True)
     email           = Column(String, unique=True, index=True, nullable=False)
     username        = Column(String, unique=True, index=True, nullable=False)
     hashed_password = Column(String, nullable=False)
@@ -101,7 +100,7 @@ class User(Base):
 class Course(Base):
     __tablename__ = "courses"
 
-    id          = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    id          = Column(String(36), primary_key=True, default=generate_uuid7, index=True)
     title       = Column(String, nullable=False)
     course_code = Column(String, index=True, nullable=True)
     description = Column(Text, nullable=True)
@@ -126,7 +125,7 @@ class Course(Base):
 class Enrollment(Base):
     __tablename__ = "enrollments"
 
-    id          = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    id          = Column(String(36), primary_key=True, default=generate_uuid7, index=True)
     student_id  = Column(String(36), ForeignKey("users.id"), nullable=False)
     course_id   = Column(String(36), ForeignKey("courses.id"), nullable=False)
     enrolled_at = Column(DateTime(timezone=True), default=lambda: datetime.now(timezone.utc), nullable=False)
@@ -138,7 +137,7 @@ class Enrollment(Base):
 class Assignment(Base):
     __tablename__ = "assignments"
 
-    id          = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    id          = Column(String(36), primary_key=True, default=generate_uuid7, index=True)
     course_id   = Column(String(36), ForeignKey("courses.id"), nullable=False)
     title       = Column(String, nullable=False)
     description = Column(Text, nullable=True)
@@ -155,7 +154,7 @@ class Assignment(Base):
 class Submission(Base):
     __tablename__ = "submissions"
 
-    id            = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    id            = Column(String(36), primary_key=True, default=generate_uuid7, index=True)
     assignment_id = Column(String(36), ForeignKey("assignments.id"), nullable=False)
     student_id    = Column(String(36), ForeignKey("users.id"), nullable=False)
     content       = Column(Text, nullable=True)
@@ -173,7 +172,7 @@ class Submission(Base):
 class Announcement(Base):
     __tablename__ = "announcements"
 
-    id                = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    id                = Column(String(36), primary_key=True, default=generate_uuid7, index=True)
     title             = Column(String, nullable=False)
     content           = Column(Text, nullable=False)
     announcement_type = Column(Enum(AnnouncementType), default=AnnouncementType.INFO, nullable=False)
@@ -187,7 +186,7 @@ class Announcement(Base):
 class CourseMaterial(Base):
     __tablename__ = "course_materials"
 
-    id          = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    id          = Column(String(36), primary_key=True, default=generate_uuid7, index=True)
     course_id   = Column(String(36), ForeignKey("courses.id"), nullable=False)
     title       = Column(String, nullable=False)
     description = Column(Text, nullable=True)
@@ -205,7 +204,7 @@ class CourseMaterial(Base):
 class Test(Base):
     __tablename__ = "tests"
 
-    id                  = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    id                  = Column(String(36), primary_key=True, default=generate_uuid7, index=True)
     course_id           = Column(String(36), ForeignKey("courses.id"), nullable=False)
     title               = Column(String, nullable=False)
     description         = Column(Text, nullable=True)
@@ -229,7 +228,7 @@ class Test(Base):
 class TestQuestion(Base):
     __tablename__ = "test_questions"
 
-    id                 = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    id                 = Column(String(36), primary_key=True, default=generate_uuid7, index=True)
     test_id            = Column(String(36), ForeignKey("tests.id"), nullable=False)
     question_type      = Column(Enum(QuestionType), nullable=False)
     question_text      = Column(Text, nullable=False)
@@ -246,7 +245,7 @@ class TestQuestion(Base):
 class TestAttempt(Base):
     __tablename__ = "test_attempts"
 
-    id                  = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    id                  = Column(String(36), primary_key=True, default=generate_uuid7, index=True)
     test_id             = Column(String(36), ForeignKey("tests.id"), nullable=False)
     student_id          = Column(String(36), ForeignKey("users.id"), nullable=False)
     status              = Column(Enum(TestAttemptStatus), default=TestAttemptStatus.IN_PROGRESS, nullable=False)
@@ -266,7 +265,7 @@ class TestAttempt(Base):
 class TestAnswer(Base):
     __tablename__ = "test_answers"
 
-    id               = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    id               = Column(String(36), primary_key=True, default=generate_uuid7, index=True)
     attempt_id       = Column(String(36), ForeignKey("test_attempts.id"), nullable=False)
     question_id      = Column(String(36), ForeignKey("test_questions.id"), nullable=False)
     answer_text      = Column(Text, nullable=True)
@@ -281,7 +280,7 @@ class TestAnswer(Base):
 class Warning(Base):
     __tablename__ = "warnings"
 
-    id         = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    id         = Column(String(36), primary_key=True, default=generate_uuid7, index=True)
     student_id = Column(String(36), ForeignKey("users.id"), nullable=False)
     issued_by  = Column(String(36), ForeignKey("users.id"), nullable=False)
     course_id  = Column(String(36), ForeignKey("courses.id"), nullable=True)
@@ -298,7 +297,7 @@ class Warning(Base):
 class Notification(Base):
     __tablename__ = "notifications"
 
-    id            = Column(String(36), primary_key=True, default=generate_uuid5, index=True)
+    id            = Column(String(36), primary_key=True, default=generate_uuid7, index=True)
     user_id       = Column(String(36), ForeignKey("users.id"), nullable=False)
     type          = Column(Enum(NotificationType), nullable=False)
     title         = Column(String(255), nullable=False)

@@ -510,6 +510,11 @@ def submit_test(
         joinedload(Test.questions)
     ).filter(Test.id == str(test_id)).first()
 
+    # PERFORMANCE: build a lookup once instead of running one query per
+    # answer below. `test.questions` is already loaded by the joinedload
+    # above, so this is free — no extra DB round-trip per question.
+    questions_by_id = {q.id: q for q in test.questions}
+
     now = datetime.now(timezone.utc)
     started_at = make_aware(attempt.started_at)
     time_taken = int((now - started_at).total_seconds() / 60)
@@ -522,11 +527,9 @@ def submit_test(
         attempt.invalidation_reason = submission.invalidation_reason
 
         for answer_data in submission.answers:
-            question = db.query(TestQuestion).filter(
-                TestQuestion.id == str(answer_data.question_id)
-            ).first()
+            question = questions_by_id.get(str(answer_data.question_id))
 
-            if not question or question.test_id != str(test_id):
+            if not question:
                 continue
 
             test_answer = TestAnswer(
@@ -559,11 +562,9 @@ def submit_test(
     has_theory_questions = False
 
     for answer_data in submission.answers:
-        question = db.query(TestQuestion).filter(
-            TestQuestion.id == str(answer_data.question_id)
-        ).first()
+        question = questions_by_id.get(str(answer_data.question_id))
 
-        if not question or question.test_id != str(test_id):
+        if not question:
             continue
 
         test_answer = TestAnswer(
